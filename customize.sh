@@ -38,6 +38,13 @@ fs_take() {
   mv -f "$_src" "$MODPATH/system/fonts/$FS_OUT" || return 2
   if [ "$FI_VAR" = 1 ]; then _d="Variable wght $FI_WMIN-$FI_WMAX"; else _d="Static"; fi
   [ -n "$FI_AXES" ] && _d="$_d / Axes: $FI_AXES"
+  if [ -n "$2" ]; then
+    if fs_rename "$MODPATH/system/fonts/$FS_OUT" "$2"; then
+      _d="$_d / Family: $2"
+    else
+      ui_print "! $(basename "$_src"): Cannot rename the family to \"$2\". The original name is kept."
+    fi
+  fi
   ui_print "  $1: $(basename "$_src") ($_d)"
   return 0
 }
@@ -46,16 +53,17 @@ ui_print "- Checking fonts..."
 FS_ROLES=""
 for R in Sans Serif Mono; do
   r=$(echo "$R" | tr 'A-Z' 'a-z')
-  fs_take "$R"; rc=$?
+  U=$(echo "$R" | tr 'a-z' 'A-Z')
+  eval "ax=\${${U}_AXES} nm=\${${U}_NAME}"
+  fs_take "$R" "$nm"; rc=$?
   if [ $rc -ne 0 ]; then
     [ "$R" = Sans ] && abort "! fonts/Sans.ttf (or .otf) not found."
     [ $rc -eq 1 ] && ui_print "  $R: None (using the system default)"
     continue
   fi
   u="$FS_OUT|$FI_VAR|$FI_WMIN|$FI_WMAX"
-  fs_take "$R-Italic"
+  fs_take "$R-Italic" "$nm"
   if [ $? -eq 0 ]; then i="$FS_OUT|$FI_VAR|$FI_WMIN|$FI_WMAX"; else i="|0|400|400"; fi
-  eval "ax=\${$(echo "$R" | tr 'a-z' 'A-Z')_AXES}"
   FS_ROLES="$FS_ROLES$r|$u|$i|$ax;"
 done
 echo "FS_ROLES='$FS_ROLES'" > "$FS_CONF"

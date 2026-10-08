@@ -25,6 +25,28 @@ fs_api() {
 
 fs_bytes() { od -An -v -tu1 -j "$2" -N "$3" "$1" 2>/dev/null | tr -s ' \n' '  '; }
 
+fs_unescape() {
+  # shellcheck disable=SC2059
+  while IFS= read -r _l; do printf "$_l"; done
+}
+
+# fs_table FILE TAG
+#   Print "offset length" of the table TAG.
+fs_table() {
+  # shellcheck disable=SC2046
+  set -- "$1" "$2" $(fs_bytes "$1" 4 2)
+  [ $# -eq 4 ] || return 1
+  fs_bytes "$1" 12 $(( ($3 * 256 + $4) * 16 )) | awk -v TAG="$2" '
+    BEGIN { for (i = 32; i < 127; i++) ORD[sprintf("%c", i)] = i }
+    function u32(i) { return (($i * 256 + $(i+1)) * 256 + $(i+2)) * 256 + $(i+3) }
+    { for (i = 1; i + 15 <= NF; i += 16)
+        if ($i == ORD[substr(TAG, 1, 1)] && $(i+1) == ORD[substr(TAG, 2, 1)] &&
+            $(i+2) == ORD[substr(TAG, 3, 1)] && $(i+3) == ORD[substr(TAG, 4, 1)]) {
+          printf "%d %d", u32(i+8), u32(i+12); exit
+        }
+    }'
+}
+
 fs_inspect() {
   FI_KIND=""; FI_VAR=0; FI_WMIN=400; FI_WMAX=400; FI_AXES=""
   _f=$1
@@ -40,12 +62,7 @@ fs_inspect() {
   esac
   _nt=$(( $5 * 256 + $6 ))
   [ "$_nt" -gt 0 ] && [ "$_nt" -lt 512 ] || return 1
-  _fv=$(fs_bytes "$_f" 12 $(( _nt * 16 )) | awk '{
-    for (i = 1; i + 15 <= NF; i += 16)
-      if ($i == 102 && $(i+1) == 118 && $(i+2) == 97 && $(i+3) == 114) {
-        printf "%d", $(i+8)*16777216 + $(i+9)*65536 + $(i+10)*256 + $(i+11); exit
-      }
-  }')
+  _fv=$(fs_table "$_f" fvar | cut -d' ' -f1)
   [ -n "$_fv" ] || return 0   # no fvar = static
   # shellcheck disable=SC2046
   set -- $(fs_bytes "$_f" "$_fv" 16)
@@ -68,6 +85,46 @@ fs_inspect() {
     esac
   done
   return 0
+}
+
+# fs_rename FILE FAMILY
+#   Rewrite the family names (name IDs 1, 4, 16, 21) of FILE to FAMILY.
+fs_rename() {
+  _rf=$1; _rn=$2
+  # shellcheck disable=SC2046
+  set -- $(fs_table "$_rf" name)
+  [ $# -eq 2 ] || return 1
+  # shellcheck disable=SC2046
+  set -- "$1" "$2" $(fs_bytes "$_rf" 4 2)
+  [ $# -eq 4 ] || return 1
+  _rd=$(( 12 + ($3 * 256 + $4) * 16 ))
+  _rs=$(wc -c < "$_rf")
+  _rm=$( { fs_bytes "$_rf" 0 "$_rd"; echo; fs_bytes "$_rf" "$1" "$2"; echo; } | \
+    awk -v NAME="$_rn" -v DIR_OUT="$_rf.dir" -v NAME_OUT="$_rf.name" -f "$FS_LIB/namegen.awk")
+  _rc=$?
+  # shellcheck disable=SC2086
+  set -- $_rm
+  if [ $_rc -ne 0 ] || [ $# -ne 5 ]; then
+    fs_log "ERROR: Cannot rename ${_rf##*/}: $_rm"
+    rm -f "$_rf.dir" "$_rf.name"
+    return 1
+  fi
+  {
+    fs_unescape < "$_rf.dir"
+    [ "$1" -gt "$_rd" ] && tail -c +$(( _rd + 1 )) "$_rf" | head -c $(( $1 - _rd ))
+    fs_unescape < "$_rf.name"
+    tail -c +$(( $2 + 1 )) "$_rf"
+  } > "$_rf.tmp"
+  _rc=$?
+  if [ $_rc -eq 0 ] && [ "$3" -ge 0 ]; then
+    # shellcheck disable=SC2059
+    printf "$5" | dd of="$_rf.tmp" bs=1 seek=$(( $3 + 8 )) count=4 conv=notrunc 2>/dev/null
+    _rc=$?
+  fi
+  rm -f "$_rf.dir" "$_rf.name"
+  [ "$_rs" -lt "$2" ] && _rs=$2
+  if [ $_rc -ne 0 ] || [ "$(wc -c < "$_rf.tmp")" -ne $(( _rs + $4 )) ]; then rm -f "$_rf.tmp"; return 1; fi
+  mv -f "$_rf.tmp" "$_rf"
 }
 
 # ---------------------------------------------------------------------------

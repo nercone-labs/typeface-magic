@@ -32,6 +32,12 @@ SANS_AXES=""
 SERIF_AXES=""
 MONO_AXES=""
 
+# Family names written into the bundled fonts (printable ASCII only). If empty, the font's own name is kept.
+# Apps that look up fonts by name instead of fonts.xml (such as Firefox) only find the fonts under these names.
+SANS_NAME="Roboto"
+SERIF_NAME="Noto Serif"
+MONO_NAME="Droid Sans Mono"
+
 # If this many consecutive boots fail to reach sys.boot_completed,
 # the generated XML is removed and the module is automatically disabled. Set 0 to disable this guard.
 BOOTLOOP_GUARD=3
