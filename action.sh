@@ -8,6 +8,7 @@ for f in "$FS_SRC_MAIN" "$FS_SRC_FALLBACK" "$FS_SRC_CUSTOM"; do
   [ -f "$f" ] || continue
   if grep -q "$FS_MARK" "$f"; then echo "[applied] $f"; else echo "[not applied] $f"; fi
 done
+while read -r u c s; do echo "[disabled] $c (user $u, originally $s)"; done < "$FS_COMPONENTS" 2>/dev/null
 echo
 echo "== typeface_magic.log (last 40 lines) =="
 tail -n 40 "$FS_LOG" 2>/dev/null

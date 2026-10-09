@@ -1,6 +1,6 @@
 id=typeface_magic
 name=TypeFace Magic
-version=v1.0.1
-versionCode=101
+version=v2.0.0
+versionCode=200
 author=Nercone
 description=A Magisk module to change system fonts easily

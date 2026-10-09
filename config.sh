@@ -38,6 +38,15 @@ SANS_NAME="Roboto"
 SERIF_NAME="Noto Serif"
 MONO_NAME="Droid Sans Mono"
 
+# App components disabled for every user at each boot (space-separated "package/class").
+# By default, the downloadable font provider of Google Play services (GMS) and its prefetch service are disabled,
+# so that apps requesting fonts from it (such as Google Sans in Google apps) fall back to the system fonts.
+# Note that every font requested from the provider falls back, not only Google Sans.
+# Components removed from this list are restored to their former state on the next boot.
+# Components already disabled by others are left alone.
+# Disabling the module keeps them disabled; uninstall the module to restore them.
+DISABLE_COMPONENTS="com.google.android.gms/.fonts.provider.FontsProvider com.google.android.gms/.fonts.update.UpdateSchedulerService"
+
 # If this many consecutive boots fail to reach sys.boot_completed,
 # the generated XML is removed and the module is automatically disabled. Set 0 to disable this guard.
 BOOTLOOP_GUARD=3

@@ -16,6 +16,7 @@ if [ "$KSU" = true ]; then
 fi
 
 rm -f "$FS_LOG" "$FS_STATE"
+cp -f "/data/adb/modules/${MODPATH##*/}/${FS_COMPONENTS##*/}" "$FS_COMPONENTS" 2>/dev/null
 mkdir -p "$MODPATH/system/fonts"
 
 fs_find() {
@@ -82,5 +83,10 @@ else
   abort "! Failed to generate fonts.xml. Please check typeface_magic.log!"
 fi
 
+if [ -n "$DISABLE_COMPONENTS" ]; then
+  ui_print "- Components to disable at boot:"
+  for c in $DISABLE_COMPONENTS; do ui_print "  $c"; done
+fi
+
 set_perm_recursive "$MODPATH/system" 0 0 0755 0644
-ui_print "- The changes will take effect after a restart. To revert to the original settings, disable this module and reboot."
+ui_print "- The changes will take effect after a restart. To revert to the original settings, uninstall this module and reboot (disabling it keeps the components disabled)."

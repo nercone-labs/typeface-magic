@@ -6,6 +6,7 @@ FS_LIB="$FS_MODDIR/common"
 FS_CONF="$FS_MODDIR/typeface_magic.conf"
 FS_STATE="$FS_MODDIR/.state"
 FS_LOG="$FS_MODDIR/typeface_magic.log"
+FS_COMPONENTS="$FS_MODDIR/.components"
 
 FS_SRC_MAIN=/system/etc/fonts.xml
 FS_SRC_FALLBACK=/system/etc/font_fallback.xml
@@ -216,4 +217,81 @@ fs_generate_all() {
   rmdir "$FS_MODDIR/system/product/etc" "$FS_MODDIR/system/product" 2>/dev/null
   if [ $_pending -eq 0 ]; then echo "$_now" > "$FS_STATE"; else rm -f "$FS_STATE"; fi
   return 0
+}
+
+# ---------------------------------------------------------------------------
+# Component Control
+# ---------------------------------------------------------------------------
+fs_wait_boot() {
+  until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 5; done
+}
+
+# fs_component_state USER COMPONENT
+#   Print the enabled state of COMPONENT for USER: "default", "enabled" or "disabled".
+fs_component_state() {
+  _p=${2%%/*}; _n=${2#*/}
+  case "$_n" in .*) _n="$_p$_n" ;; esac
+  dumpsys package "$_p" 2>/dev/null | awk -v U="$1" -v N="$_n" '
+    function indent() { return match($0, /[^ ]/) - 1 }
+    /^ *User [0-9]+: / { u = ($2 == U ":"); m = ""; next }
+    !u { next }
+    m != "" && indent() <= h { m = "" }
+    /^ *(disabled|enabled)Components:$/ { m = $1; sub(/Components:$/, "", m); h = indent(); next }
+    m != "" { s = $0; gsub(/ /, "", s); if (s == N) { r = m; exit } }
+    END { print (r == "" ? "default" : r) }'
+}
+
+# fs_components LIST RECORD
+#   Disable the components in LIST for every user, and restore the components in RECORD
+#   (lines of "USER COMPONENT STATE" disabled by this module) that are no longer in LIST to their former STATE.
+#   Components already disabled by others are left alone. Print the new RECORD.
+fs_components() {
+  _users=$(pm list users 2>/dev/null | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p' | tr '\n' ' ')
+  if [ -z "$_users" ]; then
+    fs_log "ERROR: Cannot list users. Components are left unchanged."
+    [ -n "$2" ] && printf '%s\n' "$2"
+    return 1
+  fi
+  {
+    printf '%s\n' "$2" | while read -r _u _c _s; do
+      [ -n "$_s" ] || continue
+      case " $_users " in *" $_u "*) ;; *) continue ;; esac
+      case " $1 " in *" $_c "*) continue ;; esac
+      case "$_s" in enabled) _a=enable ;; *) _a=default-state ;; esac
+      if pm "$_a" --user "$_u" "$_c" >/dev/null 2>&1; then
+        fs_log "restored: $_c (user $_u, $_s)"
+      else
+        fs_log "ERROR: Cannot restore $_c (user $_u, $_s)"
+        echo "$_u $_c $_s"
+      fi
+    done
+    for _u in $_users; do
+      for _c in $1; do
+        _s=$(printf '%s\n' "$2" | awk -v U="$_u" -v C="$_c" '$1 == U && $2 == C { print $3; exit }')
+        _was=$_s
+        if [ -z "$_was" ]; then
+          _s=$(fs_component_state "$_u" "$_c")
+          if [ "$_s" = disabled ]; then
+            fs_log "skipped: $_c (user $_u) is already disabled"
+            continue
+          fi
+        fi
+        if pm disable --user "$_u" "$_c" >/dev/null 2>&1; then
+          [ -n "$_was" ] || fs_log "disabled: $_c (user $_u, $_s)"
+        else
+          fs_log "WARN: Cannot disable $_c (user $_u)"
+          [ -n "$_was" ] || continue
+        fi
+        echo "$_u $_c $_s"
+      done
+    done
+  } | sort -u
+}
+
+# fs_apply_components LIST
+#   Run fs_components with the record of this module and save the new record.
+fs_apply_components() {
+  _r=$(fs_components "$1" "$(cat "$FS_COMPONENTS" 2>/dev/null)")
+  if [ -z "$_r" ]; then rm -f "$FS_COMPONENTS"; return 0; fi
+  echo "$_r" > "$FS_COMPONENTS.tmp" && mv -f "$FS_COMPONENTS.tmp" "$FS_COMPONENTS"
 }
